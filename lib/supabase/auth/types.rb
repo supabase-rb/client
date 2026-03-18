@@ -81,6 +81,7 @@ module Supabase
         :updated_at,
         :new_email,
         :invited_at,
+        :is_anonymous,
         keyword_init: true
       ) do
         def self.from_hash(hash)
@@ -106,7 +107,8 @@ module Supabase
             created_at: Types.parse_timestamp(hash["created_at"] || hash[:created_at]),
             updated_at: Types.parse_timestamp(hash["updated_at"] || hash[:updated_at]),
             new_email: hash["new_email"] || hash[:new_email],
-            invited_at: Types.parse_timestamp(hash["invited_at"] || hash[:invited_at])
+            invited_at: Types.parse_timestamp(hash["invited_at"] || hash[:invited_at]),
+            is_anonymous: hash.key?("is_anonymous") ? hash["is_anonymous"] : (hash.key?(:is_anonymous) ? hash[:is_anonymous] : false)
           )
         end
       end
@@ -124,6 +126,10 @@ module Supabase
           return nil if hash.nil?
 
           expires_at = hash["expires_at"] || hash[:expires_at]
+          expires_in = hash["expires_in"] || hash[:expires_in]
+          if expires_in && !expires_at
+            expires_at = Time.now.to_i + expires_in
+          end
           expires_at = expires_at ? Time.at(expires_at) : nil
 
           new(
@@ -246,11 +252,13 @@ module Supabase
         end
       end
 
-      MFATotpInfo = Struct.new(:qr_code, :secret, :uri, keyword_init: true)
+      AuthMFAEnrollResponseTotp = Struct.new(:qr_code, :secret, :uri, keyword_init: true)
+      MFATotpInfo = AuthMFAEnrollResponseTotp
 
       # MFA Challenge response
       AuthMFAChallengeResponse = Struct.new(
         :id,
+        :factor_type,
         :expires_at,
         keyword_init: true
       ) do
@@ -259,6 +267,7 @@ module Supabase
 
           new(
             id: hash["id"] || hash[:id],
+            factor_type: hash["factor_type"] || hash[:factor_type] || hash["type"] || hash[:type],
             expires_at: hash["expires_at"] || hash[:expires_at]
           )
         end

@@ -212,12 +212,24 @@ RSpec.describe Supabase::Auth::Types do
       expect(session.user.id).to eq("user-1")
     end
 
-    it "handles nil expires_at" do
+    it "computes expires_at from expires_in when expires_at is nil" do
+      now = Time.now.to_i
       session = described_class.from_hash(
         "access_token" => "token",
         "refresh_token" => "refresh",
         "token_type" => "bearer",
         "expires_in" => 3600,
+        "user" => { "id" => "user-1" }
+      )
+      expect(session.expires_at).to be_a(Time)
+      expect(session.expires_at.to_i).to be_within(2).of(now + 3600)
+    end
+
+    it "returns nil expires_at when both expires_at and expires_in are nil" do
+      session = described_class.from_hash(
+        "access_token" => "token",
+        "refresh_token" => "refresh",
+        "token_type" => "bearer",
         "user" => { "id" => "user-1" }
       )
       expect(session.expires_at).to be_nil
