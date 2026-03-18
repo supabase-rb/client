@@ -13,6 +13,7 @@ module Supabase
       STORAGE_KEY = "supabase.auth.token"
       EXPIRY_MARGIN = 10
       JWKS_TTL = 600 # 10 minutes
+      # Explicit algorithm-to-digest mapping; Python uses PyJWT's dynamic get_algorithm_by_name (F-008).
       ALG_TO_DIGEST = {
         "RS256" => "SHA256", "RS384" => "SHA384", "RS512" => "SHA512",
         "ES256" => "SHA256", "ES384" => "SHA384", "ES512" => "SHA512",
