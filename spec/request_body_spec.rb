@@ -376,6 +376,120 @@ RSpec.describe "Request body assertions" do
         expect(kwargs[:redirect_to]).to eq("https://example.com")
       end
     end
+
+    it "handles email OTP verification (email + token + type)" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.verify_otp(
+        type: "email",
+        email: "test@example.com",
+        token: "123456"
+      )
+
+      expect(client).to have_received(:_request) do |method, path, **kwargs|
+        expect(method).to eq("POST")
+        expect(path).to eq("verify")
+        expect(kwargs[:body][:type]).to eq("email")
+        expect(kwargs[:body][:email]).to eq("test@example.com")
+        expect(kwargs[:body][:token]).to eq("123456")
+        expect(kwargs[:body]).not_to have_key(:phone)
+        expect(kwargs[:body]).not_to have_key(:token_hash)
+      end
+    end
+
+    it "handles token_hash verification without including token key (matching Python **params spread)" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.verify_otp(
+        type: "email",
+        token_hash: "abc123hash",
+        options: { redirect_to: "https://example.com/confirm" }
+      )
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:type]).to eq("email")
+        expect(kwargs[:body][:token_hash]).to eq("abc123hash")
+        # Python: **params spread only includes keys present in the dict
+        # token should NOT be in body when only token_hash is provided
+        expect(kwargs[:body]).not_to have_key(:token)
+        expect(kwargs[:redirect_to]).to eq("https://example.com/confirm")
+      end
+    end
+
+    it "handles phone_change OTP type" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.verify_otp(
+        type: "phone_change",
+        phone: "+1234567890",
+        token: "654321"
+      )
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:type]).to eq("phone_change")
+        expect(kwargs[:body][:phone]).to eq("+1234567890")
+        expect(kwargs[:body][:token]).to eq("654321")
+      end
+    end
+
+    it "passes captcha_token in gotrue_meta_security and redirect_to separately" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.verify_otp(
+        type: "sms",
+        phone: "+1234567890",
+        token: "123456",
+        options: { captcha_token: "cap-tok", redirect_to: "https://app.com/cb" }
+      )
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:gotrue_meta_security]).to eq({ captcha_token: "cap-tok" })
+        expect(kwargs[:redirect_to]).to eq("https://app.com/cb")
+        # captcha_token should NOT be a top-level body key
+        expect(kwargs[:body]).not_to have_key(:captcha_token)
+      end
+    end
+
+    it "saves session and notifies subscribers when response has session" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+      allow(client).to receive(:_save_session).and_call_original
+      allow(client).to receive(:_notify_all_subscribers).and_call_original
+
+      response = client.verify_otp(
+        type: "sms",
+        phone: "+1234567890",
+        token: "123456"
+      )
+
+      expect(response).to be_a(Supabase::Auth::Types::AuthResponse)
+      expect(response.session).not_to be_nil
+      expect(client).to have_received(:_save_session)
+      expect(client).to have_received(:_notify_all_subscribers).with("SIGNED_IN", anything)
+    end
+
+    it "does not save session when response has no session (e.g. email confirmation)" do
+      allow(client).to receive(:_request).and_return({ "user" => nil })
+      allow(client).to receive(:_save_session)
+
+      response = client.verify_otp(
+        type: "email",
+        token_hash: "abc123",
+      )
+
+      expect(response.session).to be_nil
+      expect(client).not_to have_received(:_save_session)
+    end
+
+    it "defaults captcha_token to nil when no options provided (matching Python)" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.verify_otp(type: "sms", phone: "+1234567890", token: "123456")
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:gotrue_meta_security]).to eq({ captcha_token: nil })
+        expect(kwargs[:redirect_to]).to be_nil
+      end
+    end
   end
 
   describe "#sign_in_with_otp request body" do
@@ -502,6 +616,84 @@ RSpec.describe "Request body assertions" do
 
       expect(client).to have_received(:_request) do |_method, _path, **kwargs|
         expect(kwargs[:redirect_to]).to be_nil
+      end
+    end
+
+    %w[signup email_change sms phone_change].each do |resend_type|
+      it "supports resend type: #{resend_type}" do
+        allow(client).to receive(:_request).and_return({ "message_id" => "msg-id" })
+
+        credential = if %w[signup email_change].include?(resend_type)
+                       { email: "test@example.com", type: resend_type }
+                     else
+                       { phone: "+1234567890", type: resend_type }
+                     end
+
+        client.resend(credential)
+
+        expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+          expect(kwargs[:body][:type]).to eq(resend_type)
+        end
+      end
+    end
+
+    it "raises AuthInvalidCredentialsError when neither email nor phone provided" do
+      expect {
+        client.resend(type: "signup")
+      }.to raise_error(Supabase::Auth::Errors::AuthInvalidCredentialsError)
+    end
+
+    it "returns AuthOtpResponse" do
+      allow(client).to receive(:_request).and_return({ "message_id" => "msg-id" })
+
+      response = client.resend(email: "test@example.com", type: "signup")
+
+      expect(response).to be_a(Supabase::Auth::Types::AuthOtpResponse)
+    end
+
+    it "email takes priority over phone when both provided (matching Python)" do
+      allow(client).to receive(:_request).and_return({ "message_id" => "msg-id" })
+
+      client.resend(
+        email: "test@example.com",
+        phone: "+1234567890",
+        type: "signup"
+      )
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:email]).to eq("test@example.com")
+        expect(kwargs[:body]).not_to have_key(:phone)
+        # redirect_to should be passed since email takes priority
+        expect(kwargs[:redirect_to]).to be_nil # nil because no email_redirect_to in options
+      end
+    end
+
+    it "defaults captcha_token to nil when no options provided" do
+      allow(client).to receive(:_request).and_return({ "message_id" => "msg-id" })
+
+      client.resend(email: "test@example.com", type: "signup")
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:gotrue_meta_security]).to eq({ captcha_token: nil })
+      end
+    end
+
+    it "sends phone resend body with gotrue_meta_security" do
+      allow(client).to receive(:_request).and_return({ "message_id" => "msg-id" })
+
+      client.resend(
+        phone: "+1234567890",
+        type: "phone_change",
+        options: { captcha_token: "cap-phone" }
+      )
+
+      expect(client).to have_received(:_request) do |method, path, **kwargs|
+        expect(method).to eq("POST")
+        expect(path).to eq("resend")
+        expect(kwargs[:body][:phone]).to eq("+1234567890")
+        expect(kwargs[:body][:type]).to eq("phone_change")
+        expect(kwargs[:body][:gotrue_meta_security]).to eq({ captcha_token: "cap-phone" })
+        expect(kwargs[:body]).not_to have_key(:email)
       end
     end
   end

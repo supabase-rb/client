@@ -228,9 +228,9 @@ module Supabase
 
         body = {
           type: type,
-          token: token,
           gotrue_meta_security: { captcha_token: captcha_token }
         }
+        body[:token] = token if token
         body[:phone] = phone if phone
         body[:email] = email if email
         body[:token_hash] = token_hash if token_hash
@@ -511,8 +511,12 @@ module Supabase
           type: type,
           gotrue_meta_security: { captcha_token: captcha_token }
         }
-        body[:email] = email if email
-        body[:phone] = phone if phone
+        # Match Python: email takes priority; only one of email/phone is sent
+        if email
+          body[:email] = email
+        else
+          body[:phone] = phone
+        end
 
         data = _request("POST", "resend", body: body, redirect_to: email ? email_redirect_to : nil)
         Helpers.parse_auth_otp_response(data)
