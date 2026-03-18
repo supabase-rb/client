@@ -85,6 +85,12 @@ module Supabase
         false
       end
 
+      def is_valid_uuid(value)
+        return false unless value.is_a?(String)
+
+        /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i.match?(value)
+      end
+
       def validate_exp(exp)
         raise Errors::AuthInvalidJwtError, "JWT has no expiration time" if exp.nil? || exp == 0
 
