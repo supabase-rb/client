@@ -15,6 +15,22 @@ module Supabase
         Time.parse(value.to_s)
       end
 
+      # Authentication method reference entry (matches Python AMREntry)
+      AMREntry = Struct.new(
+        :method,
+        :timestamp,
+        keyword_init: true
+      ) do
+        def self.from_hash(hash)
+          return nil if hash.nil?
+
+          new(
+            method: hash["method"] || hash[:method],
+            timestamp: hash["timestamp"] || hash[:timestamp]
+          )
+        end
+      end
+
       Factor = Struct.new(
         :id,
         :friendly_name,
@@ -40,6 +56,7 @@ module Supabase
 
       Identity = Struct.new(
         :id,
+        :identity_id,
         :user_id,
         :identity_data,
         :provider,
@@ -53,6 +70,7 @@ module Supabase
 
           new(
             id: hash["id"] || hash[:id],
+            identity_id: hash["identity_id"] || hash[:identity_id],
             user_id: hash["user_id"] || hash[:user_id],
             identity_data: hash["identity_data"] || hash[:identity_data] || {},
             provider: hash["provider"] || hash[:provider],
@@ -80,8 +98,13 @@ module Supabase
         :created_at,
         :updated_at,
         :new_email,
+        :new_phone,
         :invited_at,
         :is_anonymous,
+        :confirmation_sent_at,
+        :recovery_sent_at,
+        :email_change_sent_at,
+        :action_link,
         keyword_init: true
       ) do
         def self.from_hash(hash)
@@ -107,13 +130,20 @@ module Supabase
             created_at: Types.parse_timestamp(hash["created_at"] || hash[:created_at]),
             updated_at: Types.parse_timestamp(hash["updated_at"] || hash[:updated_at]),
             new_email: hash["new_email"] || hash[:new_email],
+            new_phone: hash["new_phone"] || hash[:new_phone],
             invited_at: Types.parse_timestamp(hash["invited_at"] || hash[:invited_at]),
-            is_anonymous: hash.key?("is_anonymous") ? hash["is_anonymous"] : (hash.key?(:is_anonymous) ? hash[:is_anonymous] : false)
+            is_anonymous: hash.key?("is_anonymous") ? hash["is_anonymous"] : (hash.key?(:is_anonymous) ? hash[:is_anonymous] : false),
+            confirmation_sent_at: Types.parse_timestamp(hash["confirmation_sent_at"] || hash[:confirmation_sent_at]),
+            recovery_sent_at: Types.parse_timestamp(hash["recovery_sent_at"] || hash[:recovery_sent_at]),
+            email_change_sent_at: Types.parse_timestamp(hash["email_change_sent_at"] || hash[:email_change_sent_at]),
+            action_link: hash["action_link"] || hash[:action_link]
           )
         end
       end
 
       Session = Struct.new(
+        :provider_token,
+        :provider_refresh_token,
         :access_token,
         :refresh_token,
         :token_type,
@@ -128,11 +158,13 @@ module Supabase
           expires_at = hash["expires_at"] || hash[:expires_at]
           expires_in = hash["expires_in"] || hash[:expires_in]
           if expires_in && !expires_at
-            expires_at = Time.now.to_i + expires_in
+            expires_at = Time.now.to_i + expires_in.to_i
           end
-          expires_at = expires_at ? Time.at(expires_at) : nil
+          expires_at = expires_at.to_i if expires_at
 
           new(
+            provider_token: hash["provider_token"] || hash[:provider_token],
+            provider_refresh_token: hash["provider_refresh_token"] || hash[:provider_refresh_token],
             access_token: hash["access_token"] || hash[:access_token],
             refresh_token: hash["refresh_token"] || hash[:refresh_token],
             token_type: hash["token_type"] || hash[:token_type],
@@ -234,6 +266,7 @@ module Supabase
         :type,
         :friendly_name,
         :totp,
+        :phone,
         keyword_init: true
       ) do
         def self.from_hash(hash)
@@ -247,7 +280,8 @@ module Supabase
             id: hash["id"] || hash[:id],
             type: hash["type"] || hash[:type],
             friendly_name: hash["friendly_name"] || hash[:friendly_name],
-            totp: totp_struct
+            totp: totp_struct,
+            phone: hash["phone"] || hash[:phone]
           )
         end
       end
@@ -293,20 +327,25 @@ module Supabase
         keyword_init: true
       )
 
-      # MFA Verify response
+      # MFA Verify response (matches Python: access_token, token_type, expires_in, refresh_token, user)
       AuthMFAVerifyResponse = Struct.new(
         :access_token,
-        :refresh_token,
         :token_type,
         :expires_in,
-        :expires_at,
+        :refresh_token,
         :user,
         keyword_init: true
       ) do
         def self.from_hash(hash)
           return nil if hash.nil?
 
-          Session.from_hash(hash)
+          new(
+            access_token: hash["access_token"] || hash[:access_token],
+            token_type: hash["token_type"] || hash[:token_type],
+            expires_in: hash["expires_in"] || hash[:expires_in],
+            refresh_token: hash["refresh_token"] || hash[:refresh_token],
+            user: User.from_hash(hash["user"] || hash[:user])
+          )
         end
       end
 
@@ -317,6 +356,31 @@ module Supabase
         :current_authentication_methods,
         keyword_init: true
       )
+
+      # Admin MFA List Factors response
+      AuthMFAAdminListFactorsResponse = Struct.new(
+        :factors,
+        keyword_init: true
+      ) do
+        def self.from_hash(hash)
+          return nil if hash.nil?
+
+          factors = (hash["factors"] || hash[:factors] || []).map { |f| Factor.from_hash(f) }
+          new(factors: factors)
+        end
+      end
+
+      # Admin MFA Delete Factor response
+      AuthMFAAdminDeleteFactorResponse = Struct.new(
+        :id,
+        keyword_init: true
+      ) do
+        def self.from_hash(hash)
+          return nil if hash.nil?
+
+          new(id: hash["id"] || hash[:id])
+        end
+      end
 
       # Identities response (wraps user identities)
       IdentitiesResponse = Struct.new(
