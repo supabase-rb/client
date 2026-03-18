@@ -806,4 +806,577 @@ RSpec.describe "Request body assertions" do
       expect(events).to include("SIGNED_IN")
     end
   end
+
+  # ==========================================
+  # US-002: Session Management Methods Audit
+  # ==========================================
+
+  describe "#get_session (US-002)" do
+    it "returns nil when no session exists" do
+      result = client.get_session
+      expect(result).to be_nil
+    end
+
+    it "returns session from @current_session when not persisting" do
+      setup_session(client, mock_session)
+      result = client.get_session
+      expect(result).to eq(mock_session)
+    end
+
+    it "auto-refreshes when within EXPIRY_MARGIN (10 seconds)" do
+      expired_session = Supabase::Auth::Types::Session.new(
+        access_token: "expired-token",
+        refresh_token: "valid-refresh",
+        expires_in: 0,
+        expires_at: Time.now.to_i + 5, # within 10-second margin
+        token_type: "bearer",
+        user: mock_user
+      )
+      setup_session(client, expired_session)
+
+      # Mock _call_refresh_token to return a new session
+      refreshed_session = Supabase::Auth::Types::Session.new(
+        access_token: "new-token",
+        refresh_token: "new-refresh",
+        expires_in: 3600,
+        expires_at: Time.now.to_i + 3600,
+        token_type: "bearer",
+        user: mock_user
+      )
+      allow(client).to receive(:_call_refresh_token).and_return(refreshed_session)
+
+      result = client.get_session
+      expect(result).to eq(refreshed_session)
+      expect(client).to have_received(:_call_refresh_token).with("valid-refresh")
+    end
+
+    it "does NOT refresh when session is not within EXPIRY_MARGIN" do
+      valid_session = Supabase::Auth::Types::Session.new(
+        access_token: "valid-token",
+        refresh_token: "valid-refresh",
+        expires_in: 3600,
+        expires_at: Time.now.to_i + 3600, # well beyond 10-second margin
+        token_type: "bearer",
+        user: mock_user
+      )
+      setup_session(client, valid_session)
+
+      result = client.get_session
+      expect(result).to eq(valid_session)
+    end
+
+    it "reads from storage when persist_session is true" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: false,
+        persist_session: true
+      )
+      session_data = {
+        access_token: "stored-token",
+        refresh_token: "stored-refresh",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: Time.now.to_i + 3600
+      }
+      persist_client._storage.set_item(persist_client._storage_key, JSON.generate(session_data))
+
+      result = persist_client.get_session
+      expect(result).not_to be_nil
+      expect(result.access_token).to eq("stored-token")
+    end
+
+    it "removes session from storage when invalid (matching Python)" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: false,
+        persist_session: true
+      )
+      persist_client._storage.set_item(persist_client._storage_key, '{"invalid":"data"}')
+
+      result = persist_client.get_session
+      expect(result).to be_nil
+      expect(persist_client._storage.get_item(persist_client._storage_key)).to be_nil
+    end
+
+    it "treats has_expired as false when expires_at is nil (matching Python)" do
+      no_expiry_session = Supabase::Auth::Types::Session.new(
+        access_token: "token",
+        refresh_token: "refresh",
+        expires_in: nil,
+        expires_at: nil,
+        token_type: "bearer",
+        user: mock_user
+      )
+      setup_session(client, no_expiry_session)
+
+      result = client.get_session
+      expect(result).to eq(no_expiry_session)
+    end
+  end
+
+  describe "#set_session (US-002)" do
+    it "refreshes when token is expired and refresh_token is provided" do
+      # Create an expired JWT
+      expired_payload = { "exp" => Time.now.to_i - 100, "sub" => "user-id" }
+      expired_jwt = JWT.encode(expired_payload, "secret", "HS256")
+
+      refreshed_data = mock_auth_data
+      allow(client).to receive(:_request).and_return(refreshed_data)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      response = client.set_session(expired_jwt, "valid-refresh-token")
+
+      expect(response).to be_a(Supabase::Auth::Types::AuthResponse)
+      expect(response.session).not_to be_nil
+      expect(events).to include("TOKEN_REFRESHED")
+    end
+
+    it "raises AuthSessionMissing when expired and no refresh_token" do
+      expired_payload = { "exp" => Time.now.to_i - 100 }
+      expired_jwt = JWT.encode(expired_payload, "secret", "HS256")
+
+      expect {
+        client.set_session(expired_jwt, nil)
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "raises AuthSessionMissing when expired and empty refresh_token" do
+      expired_payload = { "exp" => Time.now.to_i - 100 }
+      expired_jwt = JWT.encode(expired_payload, "secret", "HS256")
+
+      expect {
+        client.set_session(expired_jwt, "")
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "builds session from get_user when token is NOT expired" do
+      future_exp = Time.now.to_i + 3600
+      valid_payload = { "exp" => future_exp, "sub" => "user-id" }
+      valid_jwt = JWT.encode(valid_payload, "secret", "HS256")
+
+      allow(client).to receive(:get_user).and_return(
+        Supabase::Auth::Types::UserResponse.new(user: mock_user)
+      )
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      response = client.set_session(valid_jwt, "refresh-token")
+
+      expect(response.session.access_token).to eq(valid_jwt)
+      expect(response.session.refresh_token).to eq("refresh-token")
+      expect(response.session.token_type).to eq("bearer")
+      expect(response.session.expires_at).to eq(future_exp)
+      expect(response.user).to eq(mock_user)
+      expect(events).to include("TOKEN_REFRESHED")
+    end
+
+    it "notifies TOKEN_REFRESHED (not SIGNED_IN), matching Python" do
+      future_exp = Time.now.to_i + 3600
+      valid_jwt = JWT.encode({ "exp" => future_exp }, "secret", "HS256")
+      allow(client).to receive(:get_user).and_return(
+        Supabase::Auth::Types::UserResponse.new(user: mock_user)
+      )
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      client.set_session(valid_jwt, "refresh")
+      expect(events).to eq(["TOKEN_REFRESHED"])
+    end
+  end
+
+  describe "#refresh_session (US-002)" do
+    it "sends grant_type=refresh_token to /token endpoint" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      response = client.refresh_session("test-refresh-token")
+
+      expect(client).to have_received(:_request) do |method, path, **kwargs|
+        expect(method).to eq("POST")
+        expect(path).to eq("token")
+        expect(kwargs[:params]).to eq({ "grant_type" => "refresh_token" })
+        expect(kwargs[:body]).to eq({ refresh_token: "test-refresh-token" })
+      end
+      expect(response).to be_a(Supabase::Auth::Types::AuthResponse)
+      expect(response.session).not_to be_nil
+    end
+
+    it "uses current session's refresh_token when none provided" do
+      setup_session(client, mock_session)
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      response = client.refresh_session
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body]).to eq({ refresh_token: "mock-refresh-token" })
+      end
+      expect(response.session).not_to be_nil
+    end
+
+    it "raises AuthSessionMissing when no refresh_token available" do
+      expect {
+        client.refresh_session
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+  end
+
+  describe "#sign_out scopes (US-002)" do
+    it "defaults scope to 'global' (matching Python)" do
+      setup_session(client, mock_session)
+      allow(client.admin).to receive(:sign_out)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      client.sign_out
+
+      expect(client.admin).to have_received(:sign_out).with("mock-access-token", "global")
+      expect(events).to include("SIGNED_OUT")
+    end
+
+    it "removes session and notifies for scope 'local'" do
+      setup_session(client, mock_session)
+      allow(client.admin).to receive(:sign_out)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      client.sign_out(scope: "local")
+
+      expect(client.admin).to have_received(:sign_out).with("mock-access-token", "local")
+      expect(events).to include("SIGNED_OUT")
+      expect(client.instance_variable_get(:@current_session)).to be_nil
+    end
+
+    it "does NOT remove session for scope 'others'" do
+      setup_session(client, mock_session)
+      allow(client.admin).to receive(:sign_out)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      client.sign_out(scope: "others")
+
+      expect(client.admin).to have_received(:sign_out).with("mock-access-token", "others")
+      expect(events).not_to include("SIGNED_OUT")
+      expect(client.instance_variable_get(:@current_session)).not_to be_nil
+    end
+
+    it "suppresses AuthApiError from admin.sign_out (matching Python)" do
+      setup_session(client, mock_session)
+      allow(client.admin).to receive(:sign_out).and_raise(
+        Supabase::Auth::Errors::AuthApiError.new("token expired", status: 401)
+      )
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      expect { client.sign_out }.not_to raise_error
+      expect(events).to include("SIGNED_OUT")
+    end
+
+    it "handles sign_out when no session exists" do
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      expect { client.sign_out }.not_to raise_error
+      expect(events).to include("SIGNED_OUT")
+    end
+  end
+
+  describe "#exchange_code_for_session (US-002)" do
+    it "sends auth_code and code_verifier with grant_type=pkce" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      response = client.exchange_code_for_session(
+        auth_code: "auth-code-123",
+        code_verifier: "verifier-abc"
+      )
+
+      expect(client).to have_received(:_request) do |method, path, **kwargs|
+        expect(method).to eq("POST")
+        expect(path).to eq("token")
+        expect(kwargs[:params]).to eq({ "grant_type" => "pkce" })
+        expect(kwargs[:body][:auth_code]).to eq("auth-code-123")
+        expect(kwargs[:body][:code_verifier]).to eq("verifier-abc")
+      end
+      expect(response.session).not_to be_nil
+    end
+
+    it "reads code_verifier from storage when not provided" do
+      client._storage.set_item("#{client._storage_key}-code-verifier", "stored-verifier")
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.exchange_code_for_session(auth_code: "auth-code-123")
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:body][:code_verifier]).to eq("stored-verifier")
+      end
+    end
+
+    it "cleans up code_verifier from storage after exchange" do
+      client._storage.set_item("#{client._storage_key}-code-verifier", "stored-verifier")
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.exchange_code_for_session(auth_code: "auth-code-123")
+
+      expect(client._storage.get_item("#{client._storage_key}-code-verifier")).to be_nil
+    end
+
+    it "saves session and notifies SIGNED_IN on success" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      response = client.exchange_code_for_session(
+        auth_code: "auth-code-123",
+        code_verifier: "verifier-abc"
+      )
+
+      expect(response.session).not_to be_nil
+      expect(events).to include("SIGNED_IN")
+    end
+
+    it "passes redirect_to parameter" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      client.exchange_code_for_session(
+        auth_code: "auth-code-123",
+        code_verifier: "verifier-abc",
+        redirect_to: "https://app.example.com"
+      )
+
+      expect(client).to have_received(:_request) do |_method, _path, **kwargs|
+        expect(kwargs[:redirect_to]).to eq("https://app.example.com")
+      end
+    end
+  end
+
+  describe "Auto-refresh token (US-002)" do
+    it "_start_auto_refresh_token cancels existing timer before creating new one" do
+      timer_mock = instance_double(Supabase::Auth::Timer, start: nil, cancel: nil, alive?: true)
+      allow(Supabase::Auth::Timer).to receive(:new).and_return(timer_mock)
+
+      auto_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: false
+      )
+
+      # Set up an existing timer
+      auto_client.instance_variable_set(:@refresh_token_timer, timer_mock)
+
+      auto_client._start_auto_refresh_token(60_000)
+
+      expect(timer_mock).to have_received(:cancel)
+    end
+
+    it "_start_auto_refresh_token does nothing when value <= 0" do
+      auto_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: false
+      )
+
+      result = auto_client._start_auto_refresh_token(0)
+      expect(result).to be_nil
+      expect(auto_client.instance_variable_get(:@refresh_token_timer)).to be_nil
+    end
+
+    it "_start_auto_refresh_token does nothing when auto_refresh_token is false" do
+      result = client._start_auto_refresh_token(60_000)
+      expect(result).to be_nil
+      expect(client.instance_variable_get(:@refresh_token_timer)).to be_nil
+    end
+
+    it "MAX_RETRIES is 10 (matching Python)" do
+      expect(Supabase::Auth::Constants::MAX_RETRIES).to eq(10)
+    end
+
+    it "RETRY_INTERVAL is 2 (matching Python)" do
+      expect(Supabase::Auth::Constants::RETRY_INTERVAL).to eq(2)
+    end
+
+    it "EXPIRY_MARGIN is 10 (matching Python)" do
+      expect(Supabase::Auth::Client::EXPIRY_MARGIN).to eq(10)
+    end
+  end
+
+  describe "#_save_session scheduling (US-002)" do
+    it "schedules auto-refresh when session has expires_at" do
+      auto_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: false
+      )
+      allow(auto_client).to receive(:_start_auto_refresh_token)
+
+      auto_client.send(:_save_session, mock_session)
+
+      expect(auto_client).to have_received(:_start_auto_refresh_token).with(kind_of(Numeric))
+    end
+
+    it "stores session in storage when persist_session is true" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: false,
+        persist_session: true
+      )
+
+      persist_client.send(:_save_session, mock_session)
+
+      stored = persist_client._storage.get_item(persist_client._storage_key)
+      expect(stored).not_to be_nil
+      parsed = JSON.parse(stored)
+      expect(parsed["access_token"]).to eq("mock-access-token")
+      expect(parsed["refresh_token"]).to eq("mock-refresh-token")
+    end
+
+    it "calculates refresh_duration_before_expires matching Python" do
+      auto_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: false
+      )
+      allow(auto_client).to receive(:_start_auto_refresh_token)
+
+      # Session with expire_in > EXPIRY_MARGIN (10)
+      session_with_long_expiry = Supabase::Auth::Types::Session.new(
+        access_token: "token",
+        refresh_token: "refresh",
+        expires_in: 3600,
+        expires_at: Time.now.to_i + 3600,
+        token_type: "bearer",
+        user: mock_user
+      )
+      auto_client.send(:_save_session, session_with_long_expiry)
+
+      expect(auto_client).to have_received(:_start_auto_refresh_token) do |value|
+        # value = (expire_in - EXPIRY_MARGIN) * 1000
+        # expire_in ≈ 3600, so value ≈ 3590000
+        expect(value).to be > 3_500_000
+        expect(value).to be < 3_700_000
+      end
+    end
+
+    it "uses 0.5s margin when expire_in <= EXPIRY_MARGIN (matching Python)" do
+      auto_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: false
+      )
+      allow(auto_client).to receive(:_start_auto_refresh_token)
+
+      # Session expiring in 5 seconds (within EXPIRY_MARGIN)
+      session_soon_expiry = Supabase::Auth::Types::Session.new(
+        access_token: "token",
+        refresh_token: "refresh",
+        expires_in: 5,
+        expires_at: Time.now.to_i + 5,
+        token_type: "bearer",
+        user: mock_user
+      )
+      auto_client.send(:_save_session, session_soon_expiry)
+
+      expect(auto_client).to have_received(:_start_auto_refresh_token) do |value|
+        # value = (expire_in - 0.5) * 1000
+        # expire_in ≈ 5, so value ≈ 4500
+        expect(value).to be > 3_000
+        expect(value).to be < 6_000
+      end
+    end
+  end
+
+  describe "#_recover_and_refresh (US-002)" do
+    it "removes session from storage when raw_session is invalid" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: false,
+        persist_session: true
+      )
+      persist_client._storage.set_item(persist_client._storage_key, "not-json")
+
+      persist_client._recover_and_refresh
+
+      expect(persist_client._storage.get_item(persist_client._storage_key)).to be_nil
+    end
+
+    it "does nothing when storage is empty" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: false,
+        persist_session: true
+      )
+
+      events = []
+      persist_client.on_auth_state_change { |event, _s| events << event }
+
+      persist_client._recover_and_refresh
+
+      expect(events).to be_empty
+    end
+
+    it "refreshes expired session with auto_refresh_token" do
+      persist_client = Supabase::Auth::Client.new(
+        url: "http://localhost:9998",
+        auto_refresh_token: true,
+        persist_session: true
+      )
+      expired_data = {
+        access_token: "expired",
+        refresh_token: "valid-refresh",
+        token_type: "bearer",
+        expires_in: 0,
+        expires_at: Time.now.to_i - 100
+      }
+      persist_client._storage.set_item(persist_client._storage_key, JSON.generate(expired_data))
+
+      allow(persist_client).to receive(:_call_refresh_token).and_return(mock_session)
+
+      events = []
+      persist_client.on_auth_state_change { |event, _s| events << event }
+
+      persist_client._recover_and_refresh
+
+      expect(persist_client).to have_received(:_call_refresh_token).with("valid-refresh")
+    end
+  end
+
+  describe "#_call_refresh_token (US-002)" do
+    it "raises AuthSessionMissing for nil refresh_token" do
+      expect {
+        client._call_refresh_token(nil)
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "raises AuthSessionMissing for empty refresh_token" do
+      expect {
+        client._call_refresh_token("")
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "saves session and notifies TOKEN_REFRESHED on success" do
+      allow(client).to receive(:_request).and_return(mock_auth_data)
+
+      events = []
+      client.on_auth_state_change { |event, _s| events << event }
+
+      result = client._call_refresh_token("valid-refresh")
+
+      expect(result).to be_a(Supabase::Auth::Types::Session)
+      expect(events).to include("TOKEN_REFRESHED")
+    end
+
+    it "raises AuthSessionMissing when response has no session" do
+      allow(client).to receive(:_request).and_return({})
+
+      expect {
+        client._call_refresh_token("valid-refresh")
+      }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+  end
 end
