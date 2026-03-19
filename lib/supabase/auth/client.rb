@@ -681,15 +681,17 @@ module Supabase
           return Types::ClaimsResponse.new(claims: payload, headers: header, signature: signature)
         end
 
-        # Asymmetric JWT - verify via JWKS
+        # Asymmetric JWT - verify via JWKS using the jwt gem's decode
         jwk_data = _fetch_jwks(header["kid"], jwks || { "keys" => [] })
-        signing_key = JWT::JWK.new(jwk_data).verify_key
+        jwk_set = JWT::JWK::Set.new({ "keys" => [jwk_data] })
 
-        digest = ALG_TO_DIGEST[header["alg"]]
-        raise Errors::AuthInvalidJwtError, "Unsupported algorithm: #{header["alg"]}" unless digest
+        raise Errors::AuthInvalidJwtError, "Unsupported algorithm: #{header["alg"]}" unless ALG_TO_DIGEST[header["alg"]]
 
-        is_valid = signing_key.verify(digest, signature, "#{raw_header}.#{raw_payload}")
-        raise Errors::AuthInvalidJwtError, "Invalid JWT signature" unless is_valid
+        begin
+          JWT.decode(token, nil, true, { algorithms: [header["alg"]], jwks: jwk_set })
+        rescue JWT::DecodeError => e
+          raise Errors::AuthInvalidJwtError, "Invalid JWT signature: #{e.message}"
+        end
 
         Types::ClaimsResponse.new(claims: payload, headers: header, signature: signature)
       end

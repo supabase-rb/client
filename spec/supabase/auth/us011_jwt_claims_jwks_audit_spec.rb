@@ -448,7 +448,7 @@ RSpec.describe "US-011: Audit JWT Claims & JWKS" do
       end
 
       expect { client.get_claims(jwt: token) }.to raise_error(
-        Supabase::Auth::Errors::AuthInvalidJwtError, "Invalid JWT signature"
+        Supabase::Auth::Errors::AuthInvalidJwtError, /Invalid JWT signature/
       )
     end
 
