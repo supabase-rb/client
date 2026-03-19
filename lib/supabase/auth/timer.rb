@@ -23,7 +23,11 @@ module Supabase
 
       def cancel
         if @thread
-          @thread.kill
+          # Don't kill the current thread (e.g. when the callback triggers
+          # a new timer via _save_session → _start_auto_refresh_token).
+          # Python's threading.Timer.cancel() only prevents future execution;
+          # it never terminates an already-running callback.
+          @thread.kill unless @thread == Thread.current
           @thread = nil
         end
       end
