@@ -337,4 +337,122 @@ RSpec.describe "MFA flow integration" do
       expect(response.next_level).to eq("aal1")
     end
   end
+
+  # ---------- Audit-specific tests for US-005 findings ----------
+
+  describe "FINDING: verify sends specific fields (matches Python body=params)" do
+    it "sends factor_id, challenge_id, and code in the request body" do
+      setup_session(client, mock_session)
+
+      captured_body = nil
+      allow(client).to receive(:_request) do |_method, _path, **kwargs|
+        captured_body = kwargs[:body]
+        mock_verify_response
+      end
+
+      client.mfa.verify(factor_id: "f1", challenge_id: "c1", code: "123456")
+
+      expect(captured_body).to include(factor_id: "f1", challenge_id: "c1", code: "123456")
+    end
+  end
+
+  describe "FINDING: list_factors calls get_user without explicit JWT" do
+    it "calls get_user which internally uses session access_token (matches Python)" do
+      setup_session(client, mock_session)
+
+      # Verify list_factors calls get_user (not get_user with explicit JWT)
+      expect(client).to receive(:get_user).with(no_args).and_return(
+        Supabase::Auth::Types::UserResponse.new(
+          user: Supabase::Auth::Types::User.new(
+            id: "uid", aud: "aud", app_metadata: {}, user_metadata: {},
+            created_at: Time.now, updated_at: Time.now, factors: []
+          )
+        )
+      )
+
+      response = client.mfa.list_factors
+      expect(response.all).to eq([])
+      expect(response.totp).to eq([])
+      expect(response.phone).to eq([])
+    end
+  end
+
+  describe "enroll: session required for all MFA operations" do
+    it "raises AuthSessionMissing when no session exists" do
+      # No session set
+      expect { client.mfa.enroll(factor_type: "totp") }
+        .to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "raises AuthSessionMissing for challenge without session" do
+      expect { client.mfa.challenge(factor_id: "f1") }
+        .to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "raises AuthSessionMissing for verify without session" do
+      expect { client.mfa.verify(factor_id: "f1", challenge_id: "c1", code: "000000") }
+        .to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+
+    it "raises AuthSessionMissing for unenroll without session" do
+      expect { client.mfa.unenroll(factor_id: "f1") }
+        .to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
+    end
+  end
+
+  describe "enroll: phone vs totp body construction" do
+    it "sends phone field for phone factor type (not issuer)" do
+      setup_session(client, mock_session)
+
+      captured_body = nil
+      allow(client).to receive(:_request) do |_method, _path, **kwargs|
+        captured_body = kwargs[:body]
+        { "id" => "f1", "type" => "phone" }
+      end
+
+      client.mfa.enroll(factor_type: "phone", phone: "+15551234567", friendly_name: "my-phone")
+
+      expect(captured_body[:phone]).to eq("+15551234567")
+      expect(captured_body).not_to have_key(:issuer)
+    end
+
+    it "sends issuer field for totp factor type (not phone)" do
+      setup_session(client, mock_session)
+
+      captured_body = nil
+      allow(client).to receive(:_request) do |_method, _path, **kwargs|
+        captured_body = kwargs[:body]
+        { "id" => "f1", "type" => "totp",
+          "totp" => { "qr_code" => "<svg/>", "secret" => "S", "uri" => "otpauth://..." } }
+      end
+
+      client.mfa.enroll(factor_type: "totp", issuer: "MyApp", friendly_name: "work")
+
+      expect(captured_body[:issuer]).to eq("MyApp")
+      expect(captured_body).not_to have_key(:phone)
+    end
+  end
+
+  describe "verify: saves session and emits MFA_CHALLENGE_VERIFIED event" do
+    it "updates current session and notifies subscribers after verify" do
+      setup_session(client, mock_session)
+
+      events = []
+      client.on_auth_state_change do |event, session|
+        events << [event, session&.access_token]
+      end
+
+      allow(client).to receive(:_request).and_return(mock_verify_response)
+
+      client.mfa.verify(factor_id: "f1", challenge_id: "c1", code: "123456")
+
+      # Session updated
+      expect(client.get_session.access_token).to eq("mfa-access-token")
+
+      # MFA_CHALLENGE_VERIFIED event emitted
+      mfa_events = events.select { |e, _| e == "MFA_CHALLENGE_VERIFIED" }
+      expect(mfa_events.length).to eq(1)
+      expect(mfa_events.first[1]).to eq("mfa-access-token")
+    end
+  end
 end
