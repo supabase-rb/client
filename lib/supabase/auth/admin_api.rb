@@ -121,6 +121,94 @@ module Supabase
         data = delete("admin/users/#{user_id}/factors/#{factor_id}")
         Types::AuthMFAAdminDeleteFactorResponse.from_hash(data)
       end
+
+      # Lists OAuth clients with optional pagination. Only relevant when the OAuth 2.1
+      # server is enabled in Supabase Auth.
+      # @param params [Hash, Types::PageParams, nil] optional :page and :per_page
+      # @return [Types::OAuthClientListResponse]
+      def _list_oauth_clients(params = nil)
+        query = {}
+        if params
+          page = params[:page] || params["page"]
+          per_page = params[:per_page] || params["per_page"]
+          query[:page] = page if page
+          query[:per_page] = per_page if per_page
+        end
+
+        response = _request("GET", "admin/oauth/clients", params: query, no_resolve_json: true)
+        body = response.body.is_a?(String) ? JSON.parse(response.body) : (response.body || {})
+        result = Types::OAuthClientListResponse.from_hash(body)
+
+        total = response.headers["x-total-count"] || response.headers["X-Total-Count"]
+        result.total = total.to_i if total
+
+        links = response.headers["link"] || response.headers["Link"]
+        if links
+          links.split(",").each do |link|
+            parts = link.split(";")
+            next unless parts.length >= 2
+
+            page_match = parts[0].split("page=")
+            next unless page_match.length >= 2
+
+            page_num = page_match[1].split("&")[0].sub(/>$/, "").to_i
+            rel = parts[1].split("=")[1].to_s.delete('"').strip
+            case rel
+            when "next" then result.next_page = page_num
+            when "last" then result.last_page = page_num
+            end
+          end
+        end
+
+        result
+      end
+
+      # Creates a new OAuth client. Only relevant when the OAuth 2.1 server is enabled.
+      # @param params [Hash] OAuth client attributes (client_name, redirect_uris, etc.)
+      # @return [Types::OAuthClientResponse]
+      def _create_oauth_client(params)
+        data = post("admin/oauth/clients", body: params)
+        Types::OAuthClientResponse.new(client: Types::OAuthClient.from_hash(data))
+      end
+
+      # Gets details of a specific OAuth client.
+      # @param client_id [String] OAuth client UUID
+      # @return [Types::OAuthClientResponse]
+      # @raise [ArgumentError] if client_id is not a valid UUID
+      def _get_oauth_client(client_id)
+        _validate_uuid(client_id)
+        data = get("admin/oauth/clients/#{client_id}")
+        Types::OAuthClientResponse.new(client: Types::OAuthClient.from_hash(data))
+      end
+
+      # Updates an OAuth client.
+      # @param client_id [String] OAuth client UUID
+      # @param params [Hash] attributes to update
+      # @return [Types::OAuthClientResponse]
+      # @raise [ArgumentError] if client_id is not a valid UUID
+      def _update_oauth_client(client_id, params)
+        _validate_uuid(client_id)
+        data = put("admin/oauth/clients/#{client_id}", body: params)
+        Types::OAuthClientResponse.new(client: Types::OAuthClient.from_hash(data))
+      end
+
+      # Deletes an OAuth client.
+      # @param client_id [String] OAuth client UUID
+      # @raise [ArgumentError] if client_id is not a valid UUID
+      def _delete_oauth_client(client_id)
+        _validate_uuid(client_id)
+        _request("DELETE", "admin/oauth/clients/#{client_id}")
+      end
+
+      # Regenerates the secret for an OAuth client.
+      # @param client_id [String] OAuth client UUID
+      # @return [Types::OAuthClientResponse]
+      # @raise [ArgumentError] if client_id is not a valid UUID
+      def _regenerate_oauth_client_secret(client_id)
+        _validate_uuid(client_id)
+        data = post("admin/oauth/clients/#{client_id}/regenerate_secret")
+        Types::OAuthClientResponse.new(client: Types::OAuthClient.from_hash(data))
+      end
     end
   end
 end

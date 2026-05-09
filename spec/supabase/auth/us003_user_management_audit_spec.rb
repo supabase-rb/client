@@ -217,7 +217,7 @@ RSpec.describe "US-003: User Management Methods Audit" do
 
   # ── AC-3: link_identity returns correct type ──
   # FINDING: Python returns OAuthResponse(provider=provider, url=response.url)
-  # Ruby returns LinkIdentityResponse (which wraps url)
+  # Ruby returns OAuthResponse (matching Python)
 
   describe "AC-3: link_identity returns correct type" do
     let(:link_response_body) { { "url" => "https://accounts.google.com/o/oauth2/auth?code=abc" }.to_json }
@@ -228,12 +228,11 @@ RSpec.describe "US-003: User Management Methods Audit" do
         .to_return(status: 200, body: link_response_body, headers: { "Content-Type" => "application/json" })
     end
 
-    it "returns LinkIdentityResponse (Ruby divergence from Python OAuthResponse)" do
+    it "returns OAuthResponse with provider and url (matches Python)" do
       result = client.link_identity(provider: "google")
 
-      # FINDING: Python returns OAuthResponse; Ruby returns LinkIdentityResponse
-      # Both contain url field, so functionally equivalent
-      expect(result).to be_a(Supabase::Auth::Types::LinkIdentityResponse)
+      expect(result).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(result.provider).to eq("google")
       expect(result.url).to eq("https://accounts.google.com/o/oauth2/auth?code=abc")
     end
 

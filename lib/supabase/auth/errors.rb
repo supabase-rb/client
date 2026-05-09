@@ -200,6 +200,7 @@ module Supabase
         invalid_credentials
         email_address_not_authorized
         email_address_invalid
+        invalid_jwt
       ].freeze
     end
   end

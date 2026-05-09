@@ -233,11 +233,12 @@ RSpec.describe Supabase::Auth::Errors do
         mfa_webauthn_enroll_not_enabled mfa_webauthn_verify_not_enabled
         mfa_verified_factor_exists invalid_credentials
         email_address_not_authorized email_address_invalid
+        invalid_jwt
       ]
     end
 
-    it "contains all 81 error codes from Python's ErrorCode type" do
-      expect(Supabase::Auth::Errors::ERROR_CODES.length).to eq(81)
+    it "contains all 82 error codes from Python's ErrorCode type" do
+      expect(Supabase::Auth::Errors::ERROR_CODES.length).to eq(82)
     end
 
     it "matches Python's ErrorCode values exactly" do

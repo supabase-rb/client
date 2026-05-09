@@ -101,6 +101,9 @@ module Supabase
         :new_phone,
         :invited_at,
         :is_anonymous,
+        :is_sso_user,
+        :deleted_at,
+        :banned_until,
         :confirmation_sent_at,
         :recovery_sent_at,
         :email_change_sent_at,
@@ -133,6 +136,9 @@ module Supabase
             new_phone: hash["new_phone"] || hash[:new_phone],
             invited_at: Types.parse_timestamp(hash["invited_at"] || hash[:invited_at]),
             is_anonymous: hash.key?("is_anonymous") ? hash["is_anonymous"] : (hash.key?(:is_anonymous) ? hash[:is_anonymous] : false),
+            is_sso_user: hash.key?("is_sso_user") ? hash["is_sso_user"] : (hash.key?(:is_sso_user) ? hash[:is_sso_user] : false),
+            deleted_at: hash["deleted_at"] || hash[:deleted_at],
+            banned_until: hash["banned_until"] || hash[:banned_until],
             confirmation_sent_at: Types.parse_timestamp(hash["confirmation_sent_at"] || hash[:confirmation_sent_at]),
             recovery_sent_at: Types.parse_timestamp(hash["recovery_sent_at"] || hash[:recovery_sent_at]),
             email_change_sent_at: Types.parse_timestamp(hash["email_change_sent_at"] || hash[:email_change_sent_at]),
@@ -428,6 +434,82 @@ module Supabase
         :claims,
         :headers,
         :signature,
+        keyword_init: true
+      )
+
+      # OAuth 2.1 server: client object returned by admin OAuth endpoints.
+      OAuthClient = Struct.new(
+        :client_id,
+        :client_name,
+        :client_secret,
+        :client_type,
+        :token_endpoint_auth_method,
+        :registration_type,
+        :client_uri,
+        :logo_uri,
+        :redirect_uris,
+        :grant_types,
+        :response_types,
+        :scope,
+        :created_at,
+        :updated_at,
+        keyword_init: true
+      ) do
+        def self.from_hash(hash)
+          return nil if hash.nil?
+
+          new(
+            client_id: hash["client_id"] || hash[:client_id],
+            client_name: hash["client_name"] || hash[:client_name],
+            client_secret: hash["client_secret"] || hash[:client_secret],
+            client_type: hash["client_type"] || hash[:client_type],
+            token_endpoint_auth_method: hash["token_endpoint_auth_method"] || hash[:token_endpoint_auth_method],
+            registration_type: hash["registration_type"] || hash[:registration_type],
+            client_uri: hash["client_uri"] || hash[:client_uri],
+            logo_uri: hash["logo_uri"] || hash[:logo_uri],
+            redirect_uris: hash["redirect_uris"] || hash[:redirect_uris] || [],
+            grant_types: hash["grant_types"] || hash[:grant_types] || [],
+            response_types: hash["response_types"] || hash[:response_types] || [],
+            scope: hash["scope"] || hash[:scope],
+            created_at: hash["created_at"] || hash[:created_at],
+            updated_at: hash["updated_at"] || hash[:updated_at]
+          )
+        end
+      end
+
+      # OAuth 2.1 server: response wrapper for single-client operations.
+      OAuthClientResponse = Struct.new(
+        :client,
+        keyword_init: true
+      )
+
+      # OAuth 2.1 server: paginated list response.
+      OAuthClientListResponse = Struct.new(
+        :clients,
+        :aud,
+        :next_page,
+        :last_page,
+        :total,
+        keyword_init: true
+      ) do
+        def self.from_hash(hash)
+          return nil if hash.nil?
+
+          clients_data = hash["clients"] || hash[:clients] || []
+          new(
+            clients: clients_data.map { |c| OAuthClient.from_hash(c) },
+            aud: hash["aud"] || hash[:aud],
+            next_page: hash["next_page"] || hash[:next_page],
+            last_page: hash["last_page"] || hash[:last_page] || 0,
+            total: hash["total"] || hash[:total] || 0
+          )
+        end
+      end
+
+      # Pagination params accepted by admin list endpoints.
+      PageParams = Struct.new(
+        :page,
+        :per_page,
         keyword_init: true
       )
     end

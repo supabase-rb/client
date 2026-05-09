@@ -377,11 +377,12 @@ RSpec.describe Supabase::Auth::Client do
       allow(client).to receive(:_get_url_for_provider).and_return([mock_url, mock_params])
 
       allow(client).to receive(:_request).and_return(
-        Supabase::Auth::Types::OAuthResponse.new(provider: "github", url: mock_url)
+        Supabase::Auth::Types::LinkIdentityResponse.new(url: mock_url)
       )
 
       response = client.link_identity(provider: "github")
 
+      expect(response).to be_a(Supabase::Auth::Types::OAuthResponse)
       expect(response.provider).to eq("github")
       expect(response.url).to eq(mock_url)
     end

@@ -761,7 +761,8 @@ RSpec.describe "Request body assertions" do
         expect(params["provider"]).to eq("github")
       end
 
-      expect(response).to be_a(Supabase::Auth::Types::LinkIdentityResponse)
+      expect(response).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(response.provider).to eq("github")
       expect(response.url).to eq("https://provider.com/auth")
     end
   end
@@ -1743,12 +1744,13 @@ RSpec.describe "Request body assertions" do
       }.to raise_error(Supabase::Auth::Errors::AuthSessionMissing)
     end
 
-    it "returns LinkIdentityResponse with only url" do
+    it "returns OAuthResponse with provider and url" do
       allow(client).to receive(:get_session).and_return(mock_session)
       allow(client).to receive(:_request).and_return(Supabase::Auth::Types::LinkIdentityResponse.new(url: "https://auth.example.com/link"))
 
       result = client.link_identity(provider: "google")
-      expect(result).to be_a(Supabase::Auth::Types::LinkIdentityResponse)
+      expect(result).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(result.provider).to eq("google")
       expect(result.url).to eq("https://auth.example.com/link")
     end
   end

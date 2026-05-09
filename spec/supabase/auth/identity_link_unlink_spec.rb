@@ -27,7 +27,7 @@ RSpec.describe Supabase::Auth::Client, "Identity Link/Unlink" do
   end
 
   # -------------------------------------------------------------------
-  # AC 1: link_identity returns LinkIdentityResponse with URL
+  # AC 1: link_identity returns OAuthResponse with provider and URL
   # -------------------------------------------------------------------
   describe "#link_identity" do
     let(:link_url_pattern) { %r{http://localhost:9999/user/identities/authorize} }
@@ -35,13 +35,14 @@ RSpec.describe Supabase::Auth::Client, "Identity Link/Unlink" do
     let(:link_response_body) { { "url" => "https://accounts.google.com/o/oauth2/auth?..." }.to_json }
     let(:link_response_headers) { { "Content-Type" => "application/json" } }
 
-    it "returns LinkIdentityResponse with url" do
+    it "returns OAuthResponse with provider and url" do
       stub_request(:get, link_url_pattern)
         .to_return(status: 200, body: link_response_body, headers: link_response_headers)
 
       response = client.link_identity(provider: "google")
 
-      expect(response).to be_a(Supabase::Auth::Types::LinkIdentityResponse)
+      expect(response).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(response.provider).to eq("google")
       expect(response.url).to eq("https://accounts.google.com/o/oauth2/auth?...")
     end
 

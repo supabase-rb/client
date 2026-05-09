@@ -228,12 +228,11 @@ RSpec.describe "Audit Findings (US-015)" do
     end
   end
 
-  describe "US-002: link_identity returns LinkIdentityResponse" do
-    # Fixed: link_identity now returns LinkIdentityResponse (url only)
-    # matching the return type from parse_link_identity_response
+  describe "US-002: link_identity returns OAuthResponse" do
+    # link_identity returns OAuthResponse(provider:, url:) matching Python.
     let(:client) { Supabase::Auth::Client.new(url: url, headers: headers, persist_session: false) }
 
-    it "returns LinkIdentityResponse with only url" do
+    it "returns OAuthResponse with provider and url" do
       client.instance_variable_set(:@current_session,
         Supabase::Auth::Types::Session.new(
           access_token: "at", refresh_token: "rt", token_type: "bearer",
@@ -245,7 +244,8 @@ RSpec.describe "Audit Findings (US-015)" do
                    headers: { "Content-Type" => "application/json" })
 
       result = client.link_identity(provider: "github")
-      expect(result).to be_a(Supabase::Auth::Types::LinkIdentityResponse)
+      expect(result).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(result.provider).to eq("github")
       expect(result.url).to eq("https://provider.com/auth")
     end
   end

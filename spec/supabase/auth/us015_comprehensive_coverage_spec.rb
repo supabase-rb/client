@@ -70,17 +70,19 @@ RSpec.describe "US-015: Comprehensive Audit Findings Coverage" do
   # AC-1: Tests for each discrepancy found in the audit
   # ════════════════════════════════════════════════════════════════════
   describe "Audit discrepancies" do
-    # FINDING US-003: link_identity returns different type
-    it "link_identity returns OAuthResponse (Ruby) vs LinkIdentityResponse divergence documented" do
-      # Ruby returns an OAuthResponse-like structure; Python returns OAuthResponse(provider, url)
-      # Verify Ruby's return type is usable
-      client, _stubs = build_client do |stub|
+    it "link_identity returns Types::OAuthResponse with provider and url (matches Python)" do
+      mock_storage.set_item("supabase.auth.token", JSON.generate(mock_session))
+      client, _stubs = build_client(persist_session: true, storage: mock_storage) do |stub|
         stub.get("/user/identities/authorize") do
-          [200, {}, JSON.generate({ "url" => "https://provider.com/auth", "provider" => "google" })]
+          [200, {}, JSON.generate({ "url" => "https://provider.com/auth" })]
         end
       end
-      mock_storage.set_item("supabase.auth.token", JSON.generate(mock_session))
-      expect(client).to respond_to(:link_identity)
+
+      response = client.link_identity(provider: "google")
+
+      expect(response).to be_a(Supabase::Auth::Types::OAuthResponse)
+      expect(response.provider).to eq("google")
+      expect(response.url).to eq("https://provider.com/auth")
     end
 
     # FINDING US-003: get_user_identities error handling differs

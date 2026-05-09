@@ -280,11 +280,12 @@ RSpec.describe "US-007: Error Handling Audit" do
         mfa_webauthn_enroll_not_enabled mfa_webauthn_verify_not_enabled
         mfa_verified_factor_exists invalid_credentials
         email_address_not_authorized email_address_invalid
+        invalid_jwt
       ]
     end
 
-    it "has exactly 81 error codes matching Python" do
-      expect(Supabase::Auth::Errors::ERROR_CODES.length).to eq(81)
+    it "has exactly 82 error codes matching Python" do
+      expect(Supabase::Auth::Errors::ERROR_CODES.length).to eq(82)
     end
 
     it "contains every Python error code" do
