@@ -19,7 +19,13 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = "https://github.com/suparails/supabase-auth"
   spec.metadata["changelog_uri"] = "https://github.com/suparails/supabase-auth/blob/main/CHANGELOG.md"
 
-  spec.files = Dir["lib/**/*.rb", "LICENSE", "README.md"]
+  spec.files = Dir[
+    "lib/supabase-auth.rb",
+    "lib/supabase/auth.rb",
+    "lib/supabase/auth/**/*.rb",
+    "LICENSE",
+    "README.md"
+  ]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "faraday", "~> 2.0"
@@ -30,4 +36,9 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "simplecov", "~> 0.22"
   spec.add_development_dependency "webmock", "~> 3.19"
   spec.add_development_dependency "faker", "~> 3.2"
+
+  # Spike: async variant exploration (see lib/supabase/auth/async/, docs/async_design.md).
+  # Not loaded by lib/supabase/auth.rb — production sync gem stays free of async deps.
+  spec.add_development_dependency "async", "~> 2.0"
+  spec.add_development_dependency "async-http-faraday", "~> 0.20"
 end
