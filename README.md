@@ -1,5 +1,6 @@
 # supabase-rb
 
+[![Gem Version](https://img.shields.io/gem/v/supabase-auth?label=supabase-auth)](https://rubygems.org/gems/supabase-auth)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.0-red)](https://www.ruby-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -12,7 +13,7 @@ This repo is a monorepo of six gems:
 | Gem | What it does |
 |---|---|
 | `supabase`            | Umbrella — `Supabase.create_client(url:, key:)` exposes all sub-clients |
-| `supabase-auth`       | Supabase Auth / GoTrue (sign in/out, sessions, MFA, JWT, OAuth, admin) |
+| [`supabase-auth`](https://rubygems.org/gems/supabase-auth) | Supabase Auth / GoTrue (sign in/out, sessions, MFA, JWT, OAuth, admin) |
 | `supabase-postgrest`  | PostgREST query builder (select/insert/update/upsert/delete/RPC) |
 | `supabase-storage`    | Storage REST API (bucket CRUD, file upload/download, signed URLs) |
 | `supabase-functions`  | Edge Function invocation (per-call body/headers/region/response type) |
