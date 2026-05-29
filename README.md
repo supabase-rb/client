@@ -1,23 +1,27 @@
 # supabase-rb
 
-[![Gem Version](https://img.shields.io/gem/v/supabase-auth?label=supabase-auth)](https://rubygems.org/gems/supabase-auth)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.0-red)](https://www.ruby-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Ruby client for [Supabase](https://supabase.com). Mirrors the public surface of
-[`supabase-py`](https://github.com/supabase/supabase-py) so anyone porting from
-Python (or reading the Python docs) can find the Ruby equivalent by name.
+Full-featured Ruby client for [Supabase](https://supabase.com) — Auth,
+PostgREST, Storage, Edge Functions, and Realtime in one umbrella gem. Mirrors
+the public surface of [`supabase-py`](https://github.com/supabase/supabase-py)
+so anyone porting from Python (or reading the Python docs) can find the Ruby
+equivalent by name.
 
 This repo is a monorepo of six gems:
 
 | Gem | What it does |
 |---|---|
 | `supabase`            | Umbrella — `Supabase.create_client(url:, key:)` exposes all sub-clients |
-| [`supabase-auth`](https://rubygems.org/gems/supabase-auth) | Supabase Auth / GoTrue (sign in/out, sessions, MFA, JWT, OAuth, admin) |
+| `supabase-auth`       | Supabase Auth / GoTrue (sign in/out, sessions, MFA, JWT, OAuth, admin) |
 | `supabase-postgrest`  | PostgREST query builder (select/insert/update/upsert/delete/RPC) |
 | `supabase-storage`    | Storage REST API (bucket CRUD, file upload/download, signed URLs) |
 | `supabase-functions`  | Edge Function invocation (per-call body/headers/region/response type) |
 | `supabase-realtime`   | Phoenix Channels protocol + dispatch (transport-pluggable) |
+
+Currently on RubyGems: [`supabase-auth`](https://rubygems.org/gems/supabase-auth).
+The remaining sub-gems are released individually as they stabilize.
 
 Each sub-gem has a parallel `Supabase::<X>::Async::Client` built on
 [`async-http-faraday`](https://github.com/socketry/async-http-faraday) for
