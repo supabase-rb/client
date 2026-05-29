@@ -37,4 +37,4 @@ bundle exec rspec
 bundle exec rubocop
 ```
 
-When porting a new feature from `supabase-py`, prefer mirroring the Python file layout under `lib/supabase/<module>/` and adding a matching spec under `spec/supabase/<module>/`. The umbrella gem (`supabase.gemspec`) depends on each sub-gem, so changes to a sub-library are picked up automatically.
+When porting a new feature from `supabase-py`, prefer mirroring the Python file layout under `lib/supabase/<module>/` and adding a matching spec under `spec/supabase/<module>/`. The umbrella gem (`supabase-rb.gemspec`) depends on each sub-gem, so changes to a sub-library are picked up automatically.

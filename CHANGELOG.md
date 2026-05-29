@@ -7,6 +7,14 @@ that project's CHANGELOG for the historical upstream context behind each port.
 
 ## [Unreleased]
 
+## [1.0.0] — Umbrella renamed to `supabase-rb`
+
+The umbrella gem is now published as `supabase-rb` (the bare `supabase` name on
+RubyGems belongs to an unrelated project). The Ruby require path is unchanged
+(`require "supabase"`), as is the `Supabase` module and `Supabase.create_client`
+factory. Sub-gem names (`supabase-auth`, `supabase-postgrest`, `supabase-storage`,
+`supabase-functions`, `supabase-realtime`) are unchanged.
+
 ### Added
 
 - Top-level `Supabase::ClientOptions` struct mirroring supabase-py's

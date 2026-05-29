@@ -8,14 +8,16 @@ public surface of [`supabase-py`](https://github.com/supabase/supabase-py)
 so anyone porting from Python (or reading the Python docs) can find the
 Ruby equivalent by name.
 
-- [supabase](lib/supabase/README.md)
+- [supabase-rb](lib/supabase/README.md) — umbrella
 - [supabase-auth](lib/supabase/auth/README.md)
 - [supabase-postgrest](lib/supabase/postgrest/README.md)
 - [supabase-storage](lib/supabase/storage/README.md)
 - [supabase-functions](lib/supabase/functions/README.md)
 - [supabase-realtime](lib/supabase/realtime/README.md)
 
-Currently on RubyGems: [`supabase-auth`](https://rubygems.org/gems/supabase-auth).
+Currently on RubyGems:
+[`supabase-rb`](https://rubygems.org/gems/supabase-rb) (umbrella) and
+[`supabase-auth`](https://rubygems.org/gems/supabase-auth).
 The remaining sub-gems are released individually as they stabilize.
 
 Relevant links:
@@ -28,8 +30,8 @@ Relevant links:
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/supabase-rb/client.git
-cd client
+git clone https://github.com/supabase-ruby/supabase-rb.git
+cd supabase-rb
 ```
 
 ### Dependencies

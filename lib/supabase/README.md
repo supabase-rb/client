@@ -1,19 +1,20 @@
-# `supabase`
+# `supabase-rb`
 
 Ruby client for [Supabase](https://supabase.com). Umbrella gem that exposes
 Auth, PostgREST, Storage, Edge Functions, and Realtime through a single
 `Supabase.create_client` factory.
 
 - Documentation: [supabase.com/docs](https://supabase.com/docs/reference)
-- Source: [github.com/supabase-rb/client](https://github.com/supabase-rb/client)
+- Source: [github.com/supabase-ruby/supabase-rb](https://github.com/supabase-ruby/supabase-rb)
 
 ## Installation
 
 ```ruby
-gem "supabase"
+gem "supabase-rb"
 ```
 
-Then `bundle install`. (Requires Ruby >= 3.0.)
+Then `bundle install`. (Requires Ruby >= 3.0.) The Ruby require path is
+`require "supabase"` — only the gem name differs.
 
 ## Usage
 
